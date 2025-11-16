@@ -119,21 +119,25 @@ export const AuthProvider = ({ children }) => {
   };
 
   const updateUser = (userData) => {
+  console.log('AuthContext updateUser called with:', userData); // Debug log
 
-    const normalizedUser = {
-      ...userData,
-      profilePicture: userData.profilePicture || userData.picture
-    };
-    setUser(normalizedUser);
-    localStorage.setItem('user', JSON.stringify(normalizedUser));
-
-    if (normalizedUser.profilePicture && (normalizedUser._id || normalizedUser.id)) {
-      cacheImageUrl(
-        normalizedUser._id || normalizedUser.id,
-        normalizedUser.profilePicture
-      );
-    }
+  const normalizedUser = {
+    ...userData,
+    profilePicture: userData.profilePicture || userData.picture
   };
+  
+  console.log('Normalized user:', normalizedUser); // Debug log
+  
+  setUser(normalizedUser);
+  localStorage.setItem('user', JSON.stringify(normalizedUser));
+
+  if (normalizedUser.profilePicture && (normalizedUser._id || normalizedUser.id)) {
+    cacheImageUrl(
+      normalizedUser._id || normalizedUser.id,
+      normalizedUser.profilePicture
+    );
+  }
+};
 
   const value = {
     user,

@@ -8,7 +8,7 @@ import { getMyListings } from "../api/products";
 import { getMyPurchases, getMySales } from "../api/orders";
 import {
   getMyReviews,
-  createReview,
+  getUserReviews,  createReview,
   updateReview,
   deleteReview,
 } from "../api/reviews";
@@ -89,6 +89,15 @@ const Profile = () => {
     profilePicture: user?.profilePicture || user?.picture || "",
   });
 
+  // Keep form state in sync with user from auth context
+  useEffect(() => {
+    setForm({
+      username: user?.username || "",
+      phone: user?.phone || "",
+      profilePicture: user?.profilePicture || user?.picture || "",
+    });
+  }, [user]);
+
   const onChange = (e) =>
     setForm((s) => ({ ...s, [e.target.name]: e.target.value }));
 
@@ -104,85 +113,86 @@ const Profile = () => {
   };
 
   const handleSave = async (e) => {
-    if (e && e.preventDefault) e.preventDefault();
-    setIsSaving(true);
-    try {
-      // call API to update profile
-      let profilePicUrl = form.profilePicture;
+  if (e && e.preventDefault) e.preventDefault();
+  setIsSaving(true);
+  try {
+    let profilePicUrl = form.profilePicture;
 
-      // if user selected a new file, upload it first
-      if (selectedFile) {
-        const uploaded = await uploadProfilePicture(selectedFile);
-        // try common response shapes
-        profilePicUrl =
-          uploaded?.url ||
-          uploaded?.secure_url ||
-          uploaded?.path ||
-          uploaded?.imageUrl ||
-          uploaded?.data?.url ||
-          uploaded?.src ||
-          uploaded?.image ||
-          profilePicUrl;
-      }
-
-      const updated = await updateMyProfile({
-        username: form.username,
-        phone: form.phone,
-        profilePicture: profilePicUrl,
-      });
-
-      // update auth context and localStorage
-      // AuthContext provides updateUser
-      // We call updateUser if available on context
-      // To avoid importing AuthContext directly, call updateUser via useAuth
-      // (useAuth returns updateUser)
-      if (updateUser) {
-        const updatedData = updated.user || updated;
-
-        const mergedUser = {
-          ...user,
-          username: updatedData.username ?? user.username,
-          phone: updatedData.phone ?? user.phone,
-          profilePicture:
-            (updated.user || updated).profilePicture ||
-            (updated.user || updated).picture ||
-            user.profilePicture ||
-            user.picture,
-        };
-        console.log('Saving merged user:', mergedUser);
-        updateUser(mergedUser);
-      }
-
-      // cleanup local preview/file
-      if (previewUrl) {
-        try {
-          URL.revokeObjectURL(previewUrl);
-        } catch {
-          // ignore
-        }
-      }
-      setSelectedFile(null);
-      setPreviewUrl("");
-
-      setIsEditing(false);
-    } catch (err) {
-      const msg =
-        err?.response?.data?.message ||
-        err.message ||
-        "Failed to update profile";
-      showError(msg);
-    } finally {
-      setIsSaving(false);
+    if (selectedFile) {
+      const uploaded = await uploadProfilePicture(selectedFile);
+      profilePicUrl =
+        uploaded?.url ||
+        uploaded?.secure_url ||
+        uploaded?.path ||
+        uploaded?.imageUrl ||
+        uploaded?.data?.url ||
+        uploaded?.src ||
+        uploaded?.image ||
+        profilePicUrl;
     }
-  };
+
+    // 🔧 FIX: Map frontend fields to backend field names
+    const updatePayload = {
+      profilePicture: profilePicUrl,
+    };
+
+    // Only include fields that backend accepts
+    if (form.username) {
+      updatePayload.name = form.username;  // Backend expects 'name'
+    }
+    if (form.phone) {
+      updatePayload.contactNumber = form.phone;  // Backend expects 'contactNumber'
+    }
+
+    console.log('Sending update payload:', updatePayload); // Debug log
+
+    const updated = await updateMyProfile(updatePayload);
+
+    console.log('Update response:', updated); // Debug log
+
+    if (updateUser) {
+      const updatedData = updated.data?.user || updated.data || updated.user || updated || {};
+
+      const mergedUser = {
+        ...user,
+        username: updatedData.name || updatedData.username || user.username,
+        phone: updatedData.contactNumber || updatedData.phone || user.phone,
+        profilePicture: updatedData.profilePicture || user.profilePicture || user.picture,
+        picture: updatedData.profilePicture || user.profilePicture || user.picture,
+      };
+      
+      console.log('Merged user data:', mergedUser); // Debug log
+      updateUser(mergedUser);
+    }
+
+    if (previewUrl) {
+      try {
+        URL.revokeObjectURL(previewUrl);
+      } catch {
+        // ignore
+      }
+    }
+    setSelectedFile(null);
+    setPreviewUrl("");
+    setIsEditing(false);
+  } catch (err) {
+    console.error('Profile update error:', err); // Debug log
+    console.error('Error response:', err.response); // Debug log
+    const msg =
+      err?.response?.data?.message ||
+      err.message ||
+      "Failed to update profile";
+    showError(msg);
+  } finally {
+    setIsSaving(false);
+  }
+};
 
   const confirmSave = async () => {
     // close modal then run save
     setShowConfirm(false);
     try {
       await handleSave();
-      // ensure we exit edit mode and show updated profile
-      setIsEditing(false);
     } catch {
       // handleSave already shows errors via toasts
     }
@@ -280,62 +290,75 @@ const Profile = () => {
 
     // load sales when switching to sales tab
     const loadSales = async () => {
-      setSalesLoading(true);
-      setSalesError(null);
-      try {
-        const data = await getMySales();
-        // expected shapes: array of orders OR { orders: [...] } OR { data: [...] }
-        const orders = Array.isArray(data)
-          ? data
-          : data?.orders || data?.data || [];
-
-        // flatten order items into sale entries with buyer + order metadata
-        const saleEntries = [];
-        if (Array.isArray(orders)) {
-          orders.forEach((order) => {
-            const orderItems =
-              order.items || order.products || order.orderItems || [];
-            if (Array.isArray(orderItems) && orderItems.length) {
-              orderItems.forEach((it) => {
-                const product =
-                  it.product || it.productId || it.productInfo || it;
-                const quantity = it.quantity || it.qty || it.count || 1;
-                const price =
-                  it.price || it.amount || product?.price || order.total || 0;
-                saleEntries.push({
-                  orderId: order._id || order.id,
-                  product,
-                  buyer:
-                    order.buyer ||
-                    order.customer ||
-                    order.user ||
-                    order.buyerInfo,
-                  quantity,
-                  price,
-                  status: order.status || order.orderStatus,
-                  createdAt: order.createdAt || order.date || order.purchasedAt,
-                });
-              });
-            }
+  setSalesLoading(true);
+  setSalesError(null);
+  try {
+    const response = await getMySales();
+    
+    // Handle the nested structure: response.data.orders
+    let orders = [];
+    
+    if (Array.isArray(response)) {
+      orders = response;
+    } else if (response?.data?.orders) {
+      // This handles: { success: true, data: { orders: [...], pagination: {...} } }
+      orders = response.data.orders;
+    } else if (response?.orders) {
+      // Fallback: { orders: [...] }
+      orders = response.orders;
+    } else if (response?.data && Array.isArray(response.data)) {
+      // Fallback: { data: [...] }
+      orders = response.data;
+    }
+    
+    // flatten order items into sale entries with buyer + order metadata
+    const saleEntries = [];
+    
+    if (Array.isArray(orders)) {
+      orders.forEach((order) => {
+        const orderItems =
+          order.items || order.products || order.orderItems || [];
+        if (Array.isArray(orderItems) && orderItems.length) {
+          orderItems.forEach((it) => {
+            const product =
+              it.product || it.productId || it.productInfo || it;
+            const quantity = it.quantity || it.qty || it.count || 1;
+            const price =
+              it.price || it.amount || product?.price || order.total || 0;
+            saleEntries.push({
+              orderId: order._id || order.id,
+              product,
+              buyer:
+                order.buyer ||
+                order.customer ||
+                order.user ||
+                order.buyerInfo,
+              quantity,
+              price,
+              status: order.status || order.orderStatus,
+              createdAt: order.createdAt || order.date || order.purchasedAt,
+            });
           });
-        } else {
-          logger.error(
-            "loadSales: expected orders array but got:",
-            orders,
-            "raw response:",
-            data
-          );
         }
-
-        setSales(saleEntries);
-      } catch (err) {
-        setSalesError(
-          err?.response?.data?.message || err.message || "Failed to load sales"
-        );
-      } finally {
-        setSalesLoading(false);
-      }
-    };
+      });
+    } else {
+      logger.error(
+        "loadSales: expected orders array but got:",
+        orders,
+        "raw response:",
+        response
+      );
+    }
+    
+    setSales(saleEntries);
+  } catch (err) {
+    setSalesError(
+      err?.response?.data?.message || err.message || "Failed to load sales"
+    );
+  } finally {
+    setSalesLoading(false);
+  }
+};
 
     if (activeTab === "sales") {
       loadSales();
@@ -346,7 +369,10 @@ const Profile = () => {
       setReviewsLoading(true);
       setReviewsError(null);
       try {
-        const data = await getMyReviews();
+        // The route /api/reviews/my does not exist.
+        // Use getUserReviews with the logged-in user's ID instead.
+        if (!user?._id) throw new Error("User not found");
+        const data = await getUserReviews(user._id);
         // expected shapes: array OR { reviews: [...] } OR { data: [...] }
         const reviews = Array.isArray(data)
           ? data
@@ -366,7 +392,7 @@ const Profile = () => {
     if (activeTab === "reviews") {
       loadAuthoredReviews();
     }
-  }, [activeTab]);
+  }, [activeTab, user?._id]);
 
   // review handlers
   const handleWriteReview = (order, product) => {
@@ -388,10 +414,9 @@ const Profile = () => {
     try {
       await deleteReview(reviewId);
       // refresh reviews list
+      // Use getUserReviews with the logged-in user's ID to refresh
       const data = await getMyReviews();
-      const reviews = Array.isArray(data)
-        ? data
-        : data?.reviews || data?.data || [];
+      const reviews = Array.isArray(data) ? data : data?.reviews || data?.data || [];
       setAuthoredReviews(reviews);
     } catch (err) {
       showError(err?.response?.data?.message || "Failed to delete review");
@@ -410,10 +435,9 @@ const Profile = () => {
     }
 
     // refresh reviews list
+    // Use getUserReviews with the logged-in user's ID to refresh
     const data = await getMyReviews();
-    const reviews = Array.isArray(data)
-      ? data
-      : data?.reviews || data?.data || [];
+    const reviews = Array.isArray(data) ? data : data?.reviews || data?.data || [];
     setAuthoredReviews(reviews);
 
     setReviewModal({

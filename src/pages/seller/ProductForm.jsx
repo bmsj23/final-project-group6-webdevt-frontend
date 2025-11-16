@@ -107,38 +107,44 @@ const ProductForm = () => {
   };
 
   const handleImageUpload = async (e) => {
-    const files = Array.from(e.target.files);
+  const files = Array.from(e.target.files);
 
-    if (formData.images.length + files.length > 5) {
-      error('Maximum 5 Images Allowed');
-      return;
-    }
+  if (formData.images.length + files.length > 5) {
+    error('Maximum 5 Images Allowed');
+    return;
+  }
 
-    setUploadingImages(true);
+  setUploadingImages(true);
 
-    try {
-      const uploadPromises = files.map(file => {
-        const formDataObj = new FormData();
-        formDataObj.append('image', file);
-        return uploadImage(formDataObj);
-      });
+  try {
+    const uploadPromises = files.map(file => 
+      uploadImage(file, 'product') // Pass file and type
+    );
 
-      const results = await Promise.all(uploadPromises);
-      const imageUrls = results.map(res => res.data?.url || res.url);
+    const results = await Promise.all(uploadPromises);
+    
+    const imageUrls = results.map(res => 
+      res.data?.url || 
+      res.data?.secure_url || 
+      res.url || 
+      res.secure_url ||
+      res
+    );
 
-      setFormData(prev => ({
-        ...prev,
-        images: [...prev.images, ...imageUrls]
-      }));
+    setFormData(prev => ({
+      ...prev,
+      images: [...prev.images, ...imageUrls]
+    }));
 
-      success(`${files.length} Image(s) Uploaded`);
-    } catch (err) {
-      logger.error('failed to upload images:', err);
-      error('Failed To Upload Images');
-    } finally {
-      setUploadingImages(false);
-    }
-  };
+    success(`${files.length} Image(s) Uploaded`);
+  } catch (err) {
+    logger.error('failed to upload images:', err);
+    error(err?.response?.data?.message || 'Failed To Upload Images');
+  } finally {
+    setUploadingImages(false);
+    e.target.value = '';
+  }
+};
 
   const handleRemoveImage = (index) => {
     setFormData(prev => ({

@@ -1,9 +1,10 @@
 import api from './axios';
 
 // upload single image
-export const uploadSingleImage = async (file) => {
+export const uploadSingleImage = async (file, type = 'product') => {
   const formData = new FormData();
   formData.append('image', file);
+  formData.append('type', type);
 
   const response = await api.post('/upload/single', formData, {
     headers: {
@@ -32,6 +33,7 @@ export const uploadMultipleImages = async (files) => {
 export const uploadProfilePicture = async (file) => {
   const formData = new FormData();
   formData.append('image', file);
+  formData.append('type', 'profile');
 
   const response = await api.post('/upload/profile', formData, {
     headers: {
@@ -42,8 +44,10 @@ export const uploadProfilePicture = async (file) => {
 };
 
 // delete image
-export const deleteImage = async (publicId) => {
-  const response = await api.delete(`/upload/${publicId}`);
+export const deleteImage = async (imageUrl) => {
+  const response = await api.delete('/upload', {
+    data: { imageUrl } // ✅ FIX: DELETE requests need data in body
+  });
   return response.data;
 };
 
