@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Heart } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useWishlist } from '../../hooks/useWishlist';
+import { useToast } from '../../hooks/useToast';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { logger } from '../../utils/logger';
 
@@ -10,31 +11,43 @@ const ProductCard = ({ product, onGreenBg = false }) => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { wishlist, addToWishlist, removeFromWishlist } = useWishlist();
+  const { error: showError } = useToast();
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [justAdded, setJustAdded] = useState(false);
 
   if (!product || !product._id || !product.name || product.price === undefined) {
     return null;
   }
 
-  const isOwnProduct = () => {
-    return product.seller && user?._id &&
-      (user._id === product.seller._id || user._id === product.seller);
-  };
+  const isOwn = Boolean(product.seller && user?._id &&
+    (user._id === product.seller._id || user._id === product.seller));
 
-  const isInWishlist = () => {
-    return wishlist.some(item => item._id === product._id);
-  };
+  const inWishlist = Boolean(wishlist?.some(item => {
+    const itemProductId = item._id || item.product?._id || item.product;
+    return itemProductId === product._id;
+  }));
 
   const handleFavorite = async (e) => {
-    e.stopPropagation(); // prevent navigation when clicking favorite
-    const inWishlist = isInWishlist();
+    e.stopPropagation();
+    if (isProcessing) return;
+
     try {
+      setIsProcessing(true);
       if (inWishlist) {
         await removeFromWishlist(product._id);
       } else {
+        // provide product object for optimistic update
         await addToWishlist(product._id, product);
+
+        // show "Added!" feedback
+        setJustAdded(true);
+        setTimeout(() => setJustAdded(false), 2000);
       }
-    } catch (error) {
-      logger.error('failed to update wishlist:', error);
+    } catch (err) {
+      const errorMessage = err.response?.data?.message || err.message || 'failed to update wishlist';
+      showError(errorMessage);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -42,13 +55,12 @@ const ProductCard = ({ product, onGreenBg = false }) => {
     navigate(`/products/${product._id}`);
   };
 
-  const isOwn = isOwnProduct();
-  const inWishlist = isInWishlist();
+  
 
   return (
     <div
       onClick={handleCardClick}
-      className="group cursor-pointer"
+      className="group cursor-pointer transform transition-transform duration-300 hover:scale-102"
     >
       {/* product image*/}
       <div
@@ -71,7 +83,7 @@ const ProductCard = ({ product, onGreenBg = false }) => {
               e.currentTarget.classList.remove('opacity-0');
               e.currentTarget.classList.add('opacity-100');
             }}
-            className="w-full h-full object-cover transition-opacity duration-300 opacity-0 group-hover:scale-105"
+            className="w-full h-full object-cover transition-opacity duration-300 opacity-0"
           />
 
           {/* dark overlay with view product on hover */}
@@ -84,28 +96,36 @@ const ProductCard = ({ product, onGreenBg = false }) => {
 
         {/* top-left badge pill*/}
         {isOwn && (
-          <div className="absolute top-3 left-3 px-4 py-1.5 bg-primary rounded-full text-xs font-medium text-white tracking-wide z-5">
+          <div className="absolute top-3 left-3 px-4 py-1.5 bg-primary rounded-full text-xs font-medium text-white tracking-wide z-20">
             Your Listing
           </div>
         )}
 
         {product.stock === 0 && (
-          <div className="absolute top-3 left-3 px-4 py-1.5 bg-black/90 backdrop-blur-sm rounded-full text-xs font-medium text-white tracking-wide z-10">
+          <div className="absolute top-3 left-3 px-4 py-1.5 bg-black/90 backdrop-blur-sm rounded-full text-xs font-medium text-white tracking-wide z-20">
             Sold Out
           </div>
         )}
 
         {/* top right favorite button */}
+        {/* favorite button  */}
         {!isOwn && (
           <button
             onClick={handleFavorite}
-            className={`absolute top-3 right-3 p-2 rounded-full backdrop-blur-md transition-all duration-300 z-10 hover:cursor-pointer ${
+            disabled={isProcessing}
+            aria-label={inWishlist ? 'Remove from wishlist' : 'Add to wishlist'}
+            title={inWishlist ? 'Remove from wishlist' : 'Add to wishlist'}
+            className={`absolute top-3 right-3 p-2.5 rounded-full backdrop-blur-md transition-all duration-300 z-20 hover:cursor-pointer ${
               inWishlist
                 ? 'bg-white/95 text-red-500'
                 : 'bg-white/80 text-gray-600 hover:bg-white/95 hover:text-red-500'
-            }`}
+            } ${isProcessing ? 'opacity-50 cursor-wait' : ''}`}
           >
-            <Heart className={`w-4 h-4 ${inWishlist ? 'fill-current' : ''}`} />
+            {isProcessing ? (
+              <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <Heart className={`w-4 h-4 transition-transform ${inWishlist ? 'fill-current scale-110' : ''} ${justAdded ? 'animate-bounce' : ''}`} />
+            )}
           </button>
         )}
       </div>
