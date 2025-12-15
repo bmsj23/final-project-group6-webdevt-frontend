@@ -2,13 +2,15 @@ import { useState, useEffect } from 'react';
 
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { useToast } from '../hooks/useToast';
 import BecomeSellerModal from '../components/seller/BecomeSellerModal';
 import Button from '../components/common/Button';
 import { Package, TrendingUp, Users, Shield } from 'lucide-react';
 
 function Sell() {
   const navigate = useNavigate();
-  const { isSeller } = useAuth();
+  const { isSeller, updateUser } = useAuth();
+  const { showToast } = useToast();
   const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
@@ -16,6 +18,13 @@ function Sell() {
       navigate('/seller/products/');
     }
   }, [isSeller, navigate]);
+
+  const handleSellerSuccess = (data) => {
+    const updatedUser = data.data || data;
+    updateUser(updatedUser);
+    showToast('You are now a seller!', 'success');
+    navigate('/seller/products/');
+  };
 
   const benefits = [
     {
@@ -86,7 +95,11 @@ function Sell() {
       </div>
 
       {showModal && (
-        <BecomeSellerModal onClose={() => setShowModal(false)} />
+        <BecomeSellerModal 
+          isOpen={true} 
+          onClose={() => setShowModal(false)} 
+          onSuccess={handleSellerSuccess}
+        />
       )}
     </div>
   );
